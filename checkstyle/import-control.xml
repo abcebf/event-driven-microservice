@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!DOCTYPE import-control PUBLIC
+        "-//Puppy Crawl//DTD Import Control 1.1//EN"
+        "http://www.puppycrawl.com/dtds/import_control_1_1.dtd">
+
+<import-control pkg="com.ebf.eventdriven">
+  <disallow pkg="org.apache.log4j"/>
+  <disallow pkg="com.sun"/>
+  <allow pkg="org"/>
+  <allow pkg="java"/>
+  <allow pkg="javax"/>
+  <allow pkg="com"/>
+  <allow pkg="io"/>
+  <allow pkg="kafka"/>
+</import-control>

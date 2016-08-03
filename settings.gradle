@@ -1,0 +1,3 @@
+rootProject.name = 'event.driven'
+include 'core', 'examples'
+
