@@ -20,6 +20,7 @@ package com.ebf.eventdriven;
 import kafka.consumer.KafkaStream;
 import kafka.javaapi.consumer.ConsumerConnector;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
@@ -38,11 +39,12 @@ import java.util.concurrent.Executors;
 import static kafka.consumer.Consumer.createJavaConsumerConnector;
 
 /**
- * Created by Dongxiaojie on 7/30/16.
+ * Created by Henry Huang on 7/30/16.
  */
 @Component
 public class ConsumerThreadPool {
-  private static final Integer NUM_THREADS = 1;
+  @Value("${thread.number}")
+  private final Integer threadNum = 1;
 
   @Autowired
   private ApplicationContext applicationContext;
@@ -53,7 +55,7 @@ public class ConsumerThreadPool {
   private ExecutorService threadPool;
 
   public ConsumerThreadPool() {
-    threadPool = Executors.newFixedThreadPool(NUM_THREADS);
+    threadPool = Executors.newFixedThreadPool(threadNum);
   }
 
   @PostConstruct
@@ -94,7 +96,9 @@ public class ConsumerThreadPool {
     ConsumerConnector consumer = createJavaConsumerConnector(consumerConfigFactory.getConsumerConfig(group));
 
     Map<String, Integer> topicCountMap = new HashMap<String, Integer>();
-    topicCountMap.put(topic, NUM_THREADS);
+
+    Integer topicThreadNum = new Integer(applicationContext.getEnvironment().getProperty("topicThreadNum." + topic));
+    topicCountMap.put(topic, topicThreadNum);
     Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap = consumer.createMessageStreams(topicCountMap);
     List<KafkaStream<byte[], byte[]>> streams = consumerMap.get(topic);
 
