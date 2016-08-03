@@ -38,7 +38,7 @@ import java.util.concurrent.Executors;
 import static kafka.consumer.Consumer.createJavaConsumerConnector;
 
 /**
- * Created by henry huang on 7/30/16.
+ * Created by Dongxiaojie on 7/30/16.
  */
 @Component
 public class ConsumerThreadPool {

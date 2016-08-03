@@ -26,7 +26,7 @@ import com.ebf.eventdriven.examples.endpoint.resource.Video;
 @ConsumerController
 public class VideoController {
 
-  @Topic(value = "video_test", group = "a", dynamicGroup = false)
+  @Topic(value = "video_test", group = "a", dynamicGroup = true)
   public void consumeVideoMessage(Video video) {
     System.out.println("#####consuming video######");
     System.out.println(String.format("id=%1s, title=%2s", video.getId(), video.getTitle()));
