@@ -65,7 +65,8 @@ public class ConsumerThreadPool {
 
   private void loadConsumers() {
     Map<String, Object> controllers = applicationContext.getBeansWithAnnotation(ConsumerController.class);
-    for (Object controller : controllers.values()) {
+    for (String controllerName : controllers.keySet()) {
+      Object controller = controllers.get(controllerName);
       Class<?> clazz = controller.getClass();
       Annotation[] annotations = clazz.getAnnotations();
       for (Annotation annotation : annotations) {
@@ -102,10 +103,12 @@ public class ConsumerThreadPool {
     Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap = consumer.createMessageStreams(topicCountMap);
     List<KafkaStream<byte[], byte[]>> streams = consumerMap.get(topic);
 
-    int threadNumber = 0;
+    consumer.commitOffsets();
+
+
     for (final KafkaStream<byte[], byte[]> stream : streams) {
-      threadPool.submit(new ConsumerLauncher(stream, threadNumber, method, controller));
-      threadNumber++;
+      threadPool.submit(applicationContext.getBean(ConsumerLauncher.class, stream, consumer, method, controller));
+      //threadPool.submit(new ConsumerLauncher(stream, consumer, method, controllerName));
     }
   }
 }

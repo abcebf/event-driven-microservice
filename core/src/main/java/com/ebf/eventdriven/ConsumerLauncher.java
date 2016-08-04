@@ -20,8 +20,12 @@ package com.ebf.eventdriven;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kafka.javaapi.consumer.ConsumerConnector;
 import kafka.consumer.ConsumerIterator;
 import kafka.consumer.KafkaStream;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -30,20 +34,38 @@ import java.lang.reflect.Method;
 /**
  * Created by Henry Huang on 7/30/16.
  */
+@Component
 public class ConsumerLauncher implements Runnable {
+  @Autowired
+  private ApplicationContext applicationContext;
+
   private ObjectMapper objectMapper;
+
   private KafkaStream<byte[], byte[]> kafkaStream;
-  private int threadNumber;
+  private ConsumerConnector consumer;
   private Method method;
   private Object controller;
 
-  public ConsumerLauncher(KafkaStream<byte[], byte[]> kafkaStream, int threadNumber,
+  public ConsumerLauncher(KafkaStream<byte[], byte[]> kafkaStream, ConsumerConnector consumer,
                           Method method, Object controller) {
-    this.threadNumber = threadNumber;
     this.kafkaStream = kafkaStream;
-    this.objectMapper = new ObjectMapper();
+    this.consumer = consumer;
+
+    //TODO: use spring container to create an instance of ObjectMapper
+    ObjectMapper objMapper = null;
+
+    try {
+      objMapper = applicationContext.getBean(ObjectMapper.class);
+    } catch(Exception ex) {
+    }
+
+    if (objMapper == null) {
+      objMapper = new ObjectMapper();
+    }
+    this.objectMapper = objMapper;
     this.method = method;
     this.controller = controller;
+    //this.controller = applicationContext.getBean(controllerName);
   }
 
   @Override
@@ -52,10 +74,14 @@ public class ConsumerLauncher implements Runnable {
 
     while (it.hasNext()) {
       byte[] messageData = it.next().message();
+
       try {
         Object videoFromMessage = objectMapper.readValue(messageData, method.getParameterTypes()[0]);
         try {
+          //TODO: use ASM to enhance performance
           method.invoke(controller, videoFromMessage);
+          //ensure that each event will be handled at least once
+          consumer.commitOffsets(true);
         } catch (IllegalAccessException e) {
           e.printStackTrace();
         } catch (InvocationTargetException e) {

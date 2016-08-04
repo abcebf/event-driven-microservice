@@ -39,6 +39,8 @@ public class ConsumerConfigFactory {
   private String zookeeperSyncTimeMs;
   @Value("${auto.commit.interval.ms}")
   private String autoCommitIntervalMs;
+  @Value("${enable.auto.commit}")
+  private String enableAutoCommit;
 
   private Properties properties;
 
@@ -48,13 +50,16 @@ public class ConsumerConfigFactory {
     properties.put("zookeeper.connect", zookeeperConnection);
     properties.put("zookeeper.session.timeout.ms", zookeeperSessionTimeoutMs);
     properties.put("zookeeper.sync.time.ms", zookeeperSyncTimeMs);
+    properties.put("enable.auto.commit", enableAutoCommit);
     properties.put("auto.commit.interval.ms", autoCommitIntervalMs);
   }
 
   public ConsumerConfig getConsumerConfig(String groupId) {
     Properties props = new Properties();
     props.putAll(properties);
+    //if (groupId != null && !"".equals(groupId.trim())) {
     props.put("group.id", groupId);
+    //}
     return new ConsumerConfig(props);
   }
 }
