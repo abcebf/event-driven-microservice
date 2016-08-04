@@ -17,8 +17,6 @@
 
 package com.ebf.eventdriven;
 
-import kafka.consumer.KafkaStream;
-import kafka.javaapi.consumer.ConsumerConnector;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
@@ -29,14 +27,10 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import static kafka.consumer.Consumer.createJavaConsumerConnector;
 
 /**
  * Created by Henry Huang on 7/30/16.
@@ -94,21 +88,6 @@ public class ConsumerThreadPool {
   }
 
   private void consume(String topic, String group, Method method, Object controller) {
-    ConsumerConnector consumer = createJavaConsumerConnector(consumerConfigFactory.getConsumerConfig(group));
-
-    Map<String, Integer> topicCountMap = new HashMap<String, Integer>();
-
-    Integer topicThreadNum = new Integer(applicationContext.getEnvironment().getProperty("topicThreadNum." + topic));
-    topicCountMap.put(topic, topicThreadNum);
-    Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap = consumer.createMessageStreams(topicCountMap);
-    List<KafkaStream<byte[], byte[]>> streams = consumerMap.get(topic);
-
-    consumer.commitOffsets();
-
-
-    for (final KafkaStream<byte[], byte[]> stream : streams) {
-      threadPool.submit(applicationContext.getBean(ConsumerLauncher.class, stream, consumer, method, controller));
-      //threadPool.submit(new ConsumerLauncher(stream, consumer, method, controllerName));
-    }
+    threadPool.submit(applicationContext.getBean(ConsumerLauncher.class, topic, group, method, controller));
   }
 }

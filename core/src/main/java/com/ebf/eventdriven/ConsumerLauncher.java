@@ -17,19 +17,26 @@
 
 package com.ebf.eventdriven;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kafka.javaapi.consumer.ConsumerConnector;
-import kafka.consumer.ConsumerIterator;
-import kafka.consumer.KafkaStream;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Created by Henry Huang on 7/30/16.
@@ -38,18 +45,20 @@ import java.lang.reflect.Method;
 public class ConsumerLauncher implements Runnable {
   @Autowired
   private ApplicationContext applicationContext;
+  @Autowired
+  private ConsumerConfigFactory consumerConfigFactory;
 
   private ObjectMapper objectMapper;
 
-  private KafkaStream<byte[], byte[]> kafkaStream;
-  private ConsumerConnector consumer;
+  private String topic;
+  private String  group;
   private Method method;
   private Object controller;
 
-  public ConsumerLauncher(KafkaStream<byte[], byte[]> kafkaStream, ConsumerConnector consumer,
+  public ConsumerLauncher(String topic, String group,
                           Method method, Object controller) {
-    this.kafkaStream = kafkaStream;
-    this.consumer = consumer;
+    this.topic = topic;
+    this.group = group;
 
     //TODO: use spring container to create an instance of ObjectMapper
     ObjectMapper objMapper = null;
@@ -70,30 +79,116 @@ public class ConsumerLauncher implements Runnable {
 
   @Override
   public void run() {
-    ConsumerIterator<byte[], byte[]> it = kafkaStream.iterator();
+    Map<TopicPartition, OffsetAndMetadata> currentOffsets = new HashMap<>();
+    int count = 0;
+    KafkaConsumer<String, String> consumer = null;
 
-    while (it.hasNext()) {
-      byte[] messageData = it.next().message();
+    try {
+      consumer =
+          new KafkaConsumer<String, String>(consumerConfigFactory.getConsumerConfig(group),
+              new StringDeserializer(),
+              new StringDeserializer()
+          );
 
-      try {
-        Object videoFromMessage = objectMapper.readValue(messageData, method.getParameterTypes()[0]);
-        try {
-          //TODO: use ASM to enhance performance
-          method.invoke(controller, videoFromMessage);
-          //ensure that each event will be handled at least once
-          consumer.commitOffsets(true);
-        } catch (IllegalAccessException e) {
-          e.printStackTrace();
-        } catch (InvocationTargetException e) {
-          e.printStackTrace();
+      final KafkaConsumer<String, String> theConsumer = consumer;
+      final Thread mainThread = Thread.currentThread();
+
+      Runtime.getRuntime().addShutdownHook(new Thread() {
+        public void run() {
+          System.out.println("Starting exit...");
+          // Note that shutdownhook runs in a separate thread,
+          // so the only thing we can safely do to a consumer is wake it up
+          theConsumer.wakeup();
+          try {
+            mainThread.join();
+          } catch (InterruptedException e) {
+            e.printStackTrace();
+          }
         }
-      } catch (JsonParseException | JsonMappingException e) {
-        e.printStackTrace();
-      } catch (IOException e) {
-        e.printStackTrace();
+      });
+
+      consumer.subscribe(Collections.singletonList(topic),
+          new EbfConsumerRebalanceListener(consumer, currentOffsets));
+
+      boolean shouldRun = true;
+      while (shouldRun) {
+        ConsumerRecords<String, String> records = consumer.poll(100);
+        Map<String, EbfEvent> failHandledEvents = new HashMap<>();
+        for (ConsumerRecord<String, String> record : records)
+        {
+          System.out.println(String.format("topic = %s, partition = %s, offset = %d, customer = %s, country = %s\n",
+              record.topic(), record.partition(), record.offset(), record.key(), record.value()));
+          currentOffsets.put(new TopicPartition(record.topic(), record.partition()),
+              new OffsetAndMetadata(record.offset()));
+
+          EbfEvent ebfEvent = null;
+          try {
+            if (method.getGenericParameterTypes().length != 1) {
+              throw new RuntimeException("invalid handler signature.");
+            }
+            Type eventType = method.getGenericParameterTypes()[0];
+
+            if (eventType instanceof ParameterizedType) {
+              Type[] parameters = ((ParameterizedType)eventType).getActualTypeArguments();
+              Class<?>[] contentTypes = new Class<?>[parameters.length];
+              for (int i=0; i<parameters.length; i++) {
+                contentTypes[i] = (Class<?>)parameters[i];
+              }
+              JavaType type = objectMapper.getTypeFactory().constructParametricType(method.getParameterTypes()[0], contentTypes);
+              ebfEvent = objectMapper.readValue(record.value(), type);
+            } else {
+              throw new RuntimeException("invalid handler signature.");
+              //event = objectMapper.readValue(record.value(), method.getParameterTypes()[0]);
+            }
+
+            if (failHandledEvents.containsKey(ebfEvent.getProducerLogNo())) {
+              if (ebfEvent.isLast()) {
+                failHandledEvents.remove(ebfEvent.getProducerLogNo());
+              }
+            } else {
+              try {
+                //TODO: use ASM to enhance performance
+                method.invoke(controller, ebfEvent);
+                //ensure that each event will be handled at least once
+              } catch (IllegalAccessException e) {
+                //TODO
+                e.printStackTrace();
+                shouldRun = false;
+                break;
+              } catch (InvocationTargetException e) {
+                //TODO
+                e.printStackTrace();
+                shouldRun = false;
+                break;
+              }
+            }
+          } catch (Exception ex) {
+            failHandledEvents.put(ebfEvent.getProducerLogNo(), ebfEvent);
+          }
+
+          if (count % 1000 == 0) {
+            consumer.commitAsync(currentOffsets, new OffsetCommitCallback() {
+              public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
+                if (exception != null) {
+                  //commit failed
+                }
+              }
+            });
+          }
+          count++;
+        }
+      }
+    } catch (Exception e) {
+
+    } finally {
+      if (consumer != null) {
+        try {
+          consumer.commitSync();
+        } finally {
+          consumer.close();
+          consumer = null;
+        }
       }
     }
-
-    System.out.println("Shutting down Thread: " + kafkaStream);
   }
 }

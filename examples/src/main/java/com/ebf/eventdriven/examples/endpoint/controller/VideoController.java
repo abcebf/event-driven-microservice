@@ -17,6 +17,7 @@
 package com.ebf.eventdriven.examples.endpoint.controller;
 
 import com.ebf.eventdriven.ConsumerController;
+import com.ebf.eventdriven.EbfEvent;
 import com.ebf.eventdriven.Topic;
 import com.ebf.eventdriven.examples.endpoint.resource.Video;
 
@@ -26,9 +27,9 @@ import com.ebf.eventdriven.examples.endpoint.resource.Video;
 @ConsumerController
 public class VideoController {
 
-  @Topic(value = "video_test", group = "a", dynamicGroup = true)
-  public void consumeVideoMessage(Video video) {
+  @Topic(value = "video_test", dynamicGroup = true)
+  public void consumeVideoMessage(EbfEvent<Video> videoEvent) {
     System.out.println("#####consuming video######");
-    System.out.println(String.format("id=%1s, title=%2s", video.getId(), video.getTitle()));
+    System.out.println(String.format("id=%1s, title=%2s", videoEvent.getBody().getId(), videoEvent.getBody().getTitle()));
   }
 }

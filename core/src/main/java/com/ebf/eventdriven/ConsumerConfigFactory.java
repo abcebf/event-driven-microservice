@@ -17,12 +17,18 @@
 
 package com.ebf.eventdriven;
 
-import kafka.consumer.ConsumerConfig;
+import kafka.cluster.Broker;
+import org.apache.kafka.common.protocol.SecurityProtocol;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooKeeper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
 import javax.annotation.PostConstruct;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -47,19 +53,36 @@ public class ConsumerConfigFactory {
   @PostConstruct
   private void createConsumerConfig() {
     properties = new Properties();
-    properties.put("zookeeper.connect", zookeeperConnection);
-    properties.put("zookeeper.session.timeout.ms", zookeeperSessionTimeoutMs);
-    properties.put("zookeeper.sync.time.ms", zookeeperSyncTimeMs);
+//    properties.put("zookeeper.connect", zookeeperConnection);
+//    properties.put("zookeeper.session.timeout.ms", zookeeperSessionTimeoutMs);
+//    properties.put("zookeeper.sync.time.ms", zookeeperSyncTimeMs);
     properties.put("enable.auto.commit", enableAutoCommit);
     properties.put("auto.commit.interval.ms", autoCommitIntervalMs);
   }
 
-  public ConsumerConfig getConsumerConfig(String groupId) {
+  private String getBootstrapServers() throws IOException, KeeperException, InterruptedException {
+    ZooKeeper zk = new ZooKeeper(zookeeperConnection, 10000, null);
+    List<String> ids = zk.getChildren("/brokers/ids", false);
+    List<String> brokerList = new ArrayList<String>();
+    for (String id : ids) {
+      String brokerInfoString = new String(zk.getData("/brokers/ids/" + id, false, null));
+      Broker broker = Broker.createBroker(Integer.valueOf(id), brokerInfoString);
+      if (broker != null) {
+        brokerList.add(broker.getBrokerEndPoint(SecurityProtocol.PLAINTEXT).connectionString());
+      }
+    }
+    return String.join(",", brokerList);
+  }
+
+  public Properties getConsumerConfig(String groupId) throws InterruptedException, IOException, KeeperException {
     Properties props = new Properties();
     props.putAll(properties);
     //if (groupId != null && !"".equals(groupId.trim())) {
     props.put("group.id", groupId);
+    props.put("bootstrap.servers", getBootstrapServers());
+
     //}
-    return new ConsumerConfig(props);
+    return props;
+    //return new ConsumerConfig(props);
   }
 }

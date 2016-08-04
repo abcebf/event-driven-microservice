@@ -29,6 +29,6 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Topic {
   public String value();
-  public String group() default "";
+  public String group() default "groupid";
   public boolean dynamicGroup() default false;
 }
